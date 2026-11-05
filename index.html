@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>פריקת סחורה</title>
+<style>
+  :root{--bg:#f4f5f7;--card:#fff;--text:#1d1f23;--muted:#6b7280;--line:#e3e5e9;--ok:#16a34a;--okbg:#dcfce7;--acc:#2563eb}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--text);-webkit-tap-highlight-color:transparent}
+  header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:12px 14px 10px}
+  h1{font-size:19px;margin:0 0 6px}
+  .count{font-size:15px;color:var(--muted);margin-bottom:6px}
+  .count b{color:var(--text);font-size:17px}
+  .bar{height:8px;background:var(--line);border-radius:99px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:var(--ok);transition:width .25s}
+  .tools{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .tools button{font:inherit;font-size:14px;padding:7px 12px;border-radius:99px;border:1px solid var(--line);background:#fff;color:var(--text)}
+  .tools button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+  .srch{position:relative;margin-top:10px}
+  .srch input{width:100%;font:inherit;font-size:17px;padding:11px 12px 11px 40px;border:1.5px solid var(--line);border-radius:10px;background:#fff}
+  .srch input:focus{outline:none;border-color:var(--acc)}
+  .srch button{position:absolute;left:4px;top:50%;transform:translateY(-50%);border:0;background:none;font-size:18px;color:var(--muted);padding:8px 10px;display:none}
+  .srch.has button{display:block}
+  .save{font-size:12px;color:var(--muted);margin-top:6px;min-height:15px}
+  main{padding:10px 10px 40px;display:flex;flex-direction:column;gap:8px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+  .card.full{background:var(--okbg);border-color:#bbf7d0}
+  .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .name{font-weight:600;font-size:16px;background:none;border:0;padding:2px 0;font:inherit;font-weight:600;color:inherit;text-align:right}
+  .name::after{content:" ✎";color:#b0b4bb;font-size:13px}
+  .mini{font-size:13px;color:var(--muted)}
+  .full .mini{color:var(--ok);font-weight:600}
+  .sizes{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .sz{font:inherit;font-size:16px;font-weight:600;height:46px;border-radius:9px;border:1.5px solid var(--line);background:#fff;color:var(--text)}
+  .sz.done{background:var(--ok);border-color:var(--ok);color:#fff}
+  .sz.done::before{content:"✓ "}
+  .empty{text-align:center;color:var(--muted);padding:30px 10px;font-size:16px}
+  dialog{border:0;border-radius:14px;padding:18px;width:min(92vw,380px)}
+  dialog::backdrop{background:rgba(0,0,0,.35)}
+  dialog h2{font-size:17px;margin:0 0 10px}
+  dialog p{margin:0 0 10px;color:var(--muted);font-size:14px}
+  dialog input{width:100%;font:inherit;font-size:16px;padding:10px;border:1px solid var(--line);border-radius:9px}
+  .row{display:flex;gap:8px;margin-top:14px;justify-content:flex-start}
+  .row button{font:inherit;font-size:15px;padding:9px 16px;border-radius:9px;border:1px solid var(--line);background:#fff}
+  .row .main{background:var(--acc);color:#fff;border-color:var(--acc)}
+  .row .danger{background:#dc2626;color:#fff;border-color:#dc2626}
+</style>
+</head>
+<body>
+<header>
+  <h1>פריקת סחורה</h1>
+  <div class="count">הוצאו <b id="n">0</b> מתוך <span id="t">130</span></div>
+  <div class="bar"><i id="bar"></i></div>
+  <div class="srch"><input id="q" type="search" placeholder="🔍 חיפוש דגם, למשל 1009" autocomplete="off"><button id="qx" aria-label="נקה">✕</button></div>
+  <div class="tools">
+    <button id="fAll" class="on">הכול</button>
+    <button id="fLeft">רק מה שנשאר</button>
+    <button id="bSizes">שינוי מידות</button>
+    <button id="bReset">איפוס</button>
+  </div>
+  <div class="save" id="save"></div>
+</header>
+<main id="list"></main>
+
+<dialog id="dlg">
+  <h2 id="dT"></h2>
+  <p id="dP"></p>
+  <input id="dI">
+  <div class="row">
+    <button id="dOk" class="main">שמור</button>
+    <button id="dNo">ביטול</button>
+  </div>
+</dialog>
+
+<script>
+const MODELS = 26;
+const DEF_SIZES = ["3","4","5","6","7"];
+const DEF_NAMES = ["1000","1000-1","1001","1001-1","1002","1003","1004","1005","1008","1008-1","1009","1009-1","1010","1010-1","1011","1011-1","1012","1012-1","1013","1014","1018","1006","1006-1","1007","1016","1017"];
+let S = { names: [], sizes: DEF_SIZES.slice(), done: {} };
+S.names = DEF_NAMES.slice();
+let onlyLeft = false, query = "";
+
+const $ = id => document.getElementById(id);
+const key = (m, s) => m + "_" + s;
+
+// ---- local backup ----
+function loadLocal(){ try{ const v = JSON.parse(localStorage.getItem("unpack-v2")); if (v && v.names) S = v; }catch(e){} }
+function saveLocal(){ try{ localStorage.setItem("unpack-v2", JSON.stringify(S)); }catch(e){} }
+
+// ---- server save (db) ----
+let docRef = null, writeTimer = null, writing = false, pending = false;
+function setSave(t){ $("save").textContent = t; }
+function queueWrite(){
+  saveLocal();
+  if (!docRef) { setSave("נשמר בטלפון הזה"); return; }
+  setSave("שומר…");
+  clearTimeout(writeTimer);
+  writeTimer = setTimeout(doWrite, 600);
+}
+async function doWrite(){
+  if (writing) { pending = true; return; }
+  writing = true;
+  try { await docRef.set({ state: JSON.stringify(S), at: Date.now() }); setSave("נשמר ✓"); }
+  catch(e){ setSave("נשמר רק בטלפון הזה"); }
+  writing = false;
+  if (pending) { pending = false; doWrite(); }
+}
+
+// ---- render ----
+function render(){
+  const total = MODELS * S.sizes.length;
+  let n = 0;
+  const list = $("list");
+  list.innerHTML = "";
+  let shown = 0;
+  for (let m = 0; m < MODELS; m++){
+    let c = 0;
+    S.sizes.forEach((_, s) => { if (S.done[key(m, s)]) c++; });
+    n += c;
+    const full = c === S.sizes.length;
+    if (onlyLeft && full) continue;
+    if (query && !String(S.names[m]).toLowerCase().includes(query)) continue;
+    shown++;
+    const card = document.createElement("div");
+    card.className = "card" + (full ? " full" : "");
+    const top = document.createElement("div"); top.className = "top";
+    const nm = document.createElement("button"); nm.className = "name"; nm.append("דגם "); const bd = document.createElement("bdi"); bd.dir = "ltr"; bd.textContent = S.names[m]; nm.append(bd);
+    nm.onclick = () => ask("שם הדגם", "אפשר לכתוב את השם או המספר של הדגם.", S.names[m], v => { if (v.trim()) { S.names[m] = v.trim(); queueWrite(); render(); } });
+    const mini = document.createElement("span"); mini.className = "mini";
+    mini.textContent = full ? "הכול יצא ✓" : c + "/" + S.sizes.length;
+    top.append(nm, mini);
+    const grid = document.createElement("div"); grid.className = "sizes";
+    S.sizes.forEach((sz, s) => {
+      const b = document.createElement("button");
+      const d = !!S.done[key(m, s)];
+      b.className = "sz" + (d ? " done" : "");
+      b.textContent = sz;
+      b.onclick = () => {
+        if (S.done[key(m, s)]) delete S.done[key(m, s)]; else S.done[key(m, s)] = 1;
+        queueWrite(); render();
+      };
+      grid.append(b);
+    });
+    card.append(top, grid);
+    list.append(card);
+  }
+  if (!shown){ const e = document.createElement("div"); e.className = "empty";
+    e.textContent = query ? "לא נמצא דגם כזה" + (onlyLeft ? " ברשימת מה שנשאר" : "") : "🎉 הכול הוצא מהקרטונים"; list.append(e); }
+  $("n").textContent = n; $("t").textContent = total;
+  $("bar").style.width = (total ? n / total * 100 : 0) + "%";
+}
+
+// ---- small dialog ----
+let dlgCb = null;
+function ask(title, text, value, cb, danger){
+  $("dT").textContent = title; $("dP").textContent = text;
+  const inp = $("dI");
+  inp.style.display = value === null ? "none" : "";
+  inp.value = value ?? "";
+  $("dOk").textContent = danger ? "כן, אפס" : "שמור";
+  $("dOk").className = danger ? "danger" : "main";
+  dlgCb = cb; $("dlg").showModal();
+  if (value !== null) setTimeout(() => inp.select(), 50);
+}
+$("dOk").onclick = () => { const cb = dlgCb; $("dlg").close(); cb && cb($("dI").value); };
+$("dNo").onclick = () => $("dlg").close();
+$("dI").onkeydown = e => { if (e.key === "Enter") $("dOk").click(); };
+
+$("fAll").onclick = () => { onlyLeft = false; $("fAll").classList.add("on"); $("fLeft").classList.remove("on"); render(); };
+$("fLeft").onclick = () => { onlyLeft = true; $("fLeft").classList.add("on"); $("fAll").classList.remove("on"); render(); };
+$("bSizes").onclick = () => ask("המידות", "כתוב את 5 המידות עם פסיק ביניהן. למשל: 3, 4, 5, 6, 7", S.sizes.join(", "), v => {
+  const arr = v.split(/[,،]/).map(x => x.trim()).filter(Boolean);
+  if (arr.length) { S.sizes = arr; queueWrite(); render(); }
+});
+$("bReset").onclick = () => ask("לאפס הכול?", "כל הסימונים יימחקו. שמות הדגמים והמידות יישארו.", null, () => { S.done = {}; queueWrite(); render(); }, true);
+
+// ---- start ----
+$("q").oninput = () => { query = $("q").value.trim().toLowerCase(); $("q").parentNode.classList.toggle("has", !!query); render(); };
+$("qx").onclick = () => { $("q").value = ""; $("q").oninput(); $("q").focus(); };
+
+loadLocal();
+render();
+setSave("נשמר בטלפון הזה");
+(async () => {
+  try {
+    if (!window.claude || !claude.use) return;
+    const db = await claude.use("db");
+    if (!db) return;
+    docRef = db.doc("state/v2");
+    const timer = setTimeout(() => setSave("נשמר בטלפון הזה"), 10000);
+    const snap = await docRef.get();
+    clearTimeout(timer);
+    const data = snap && (typeof snap.data === "function" ? snap.data() : snap);
+    if (data && data.state) {
+      try { S = JSON.parse(data.state); saveLocal(); render(); } catch(e){}
+    }
+    setSave("נשמר ✓");
+  } catch(e) { docRef = null; setSave("נשמר בטלפון הזה"); }
+})();
+</script>
+</body>
+</html>
